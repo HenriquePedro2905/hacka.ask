@@ -118,13 +118,26 @@ export default function AdminLogin() {
 
         <hr className="sketchy-divider" />
 
-        <div className="text-center mt-6">
-          <button
-            onClick={() => router.push("/")}
-            className="text-sm underline hover:no-underline"
-          >
-            Voltar para página inicial
-          </button>
+        <div className="text-center mt-6 space-y-4">
+          <div>
+            <button
+              onClick={() => router.push("/")}
+              className="text-sm underline hover:no-underline"
+            >
+              Voltar para página inicial
+            </button>
+          </div>
+          <div className="text-xs text-gray-500">
+            Desenvolvido por{' '}
+            <a 
+              href="https://www.instagram.com/7_pedrohe/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              Pedro Henrique
+            </a>
+          </div>
         </div>
       </div>
     </div>

@@ -240,8 +240,19 @@ function DashboardContent() {
 
         <hr className="sketchy-divider" />
 
-        <div className="text-center text-sm text-[rgb(102_102_102)] mt-8">
+        <div className="text-center text-sm text-[rgb(102_102_102)] mt-8 space-y-2">
           <p>Sistema de Perguntas Anônimas - Hacka.Ask</p>
+          <p className="text-xs">
+            Desenvolvido por{' '}
+            <a 
+              href="https://www.instagram.com/7_pedrohe/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              Pedro Henrique
+            </a>
+          </p>
         </div>
       </div>
     </div>

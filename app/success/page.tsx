@@ -94,6 +94,20 @@ export default function Success() {
         >
           {countdown > 0 ? "Aguarde..." : "Enviar Nova Pergunta"}
         </button>
+
+        <div className="text-center mt-8 space-y-4">
+          <div className="text-xs text-gray-500">
+            Desenvolvido por{' '}
+            <a 
+              href="https://www.instagram.com/7_pedrohe/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              Pedro Henrique
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
