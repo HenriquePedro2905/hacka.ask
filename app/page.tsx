@@ -146,15 +146,9 @@ const editions = [
         <hr className="sketchy-divider" />
 
         <div className="text-center mt-8 space-y-4">
-          <div>
-            <button
-              onClick={() => router.push("/admin/login")}
-              className="text-sm underline hover:no-underline"
-            >
-              Área de Admin
-            </button>
-          </div>
-          <div className="text-xs text-gray-500">
+         <div className="text-center text-sm text-[rgb(102_102_102)] mt-8 space-y-2">
+          <p>Sistema de Perguntas Anônimas - Hacka.Ask</p>
+          <p className="text-xs">
             Desenvolvido por{' '}
             <a 
               href="https://www.instagram.com/7_pedrohe/" 
@@ -164,7 +158,8 @@ const editions = [
             >
               Pedro Henrique
             </a>
-          </div>
+          </p>
+        </div>
         </div>
       </div>
     </div>

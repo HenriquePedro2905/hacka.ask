@@ -16,9 +16,21 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import {
+  initializeTimer,
+  startTimer,
+  pauseTimer,
+  resetTimer,
+  subscribeToTimer,
+  calculateCurrentTime,
+  formatTime,
+  TimerState,
+} from "@/lib/timer";
+import { useAuth } from "@/contexts/AuthContext";
 
 function DashboardContent() {
   const router = useRouter();
+  const { user } = useAuth();
   const [selectedEdition, setSelectedEdition] = useState<string>("Sextou com Jogos");
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,8 +38,10 @@ function DashboardContent() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activatingId, setActivatingId] = useState<string | null>(null);
 
-
-  // const editions = ["Sextou com Jogos", "De frente com Frank", "The night com Miola"];
+  // Estados do cronômetro
+  const [timerState, setTimerState] = useState<TimerState | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [timerLoading, setTimerLoading] = useState(false);
 
   const editions = [
     { name: "Sextou com Jogos", logoPath: "/Sextou_Com_Jogos.svg" },
@@ -54,6 +68,33 @@ function DashboardContent() {
   useEffect(() => {
     loadQuestions(selectedEdition);
   }, [selectedEdition]);
+
+  // Inicializar e subscrever ao cronômetro
+  useEffect(() => {
+    initializeTimer();
+
+    const unsubscribe = subscribeToTimer((state) => {
+      setTimerState(state);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Atualizar tempo do cronômetro
+  useEffect(() => {
+    if (!timerState) return;
+
+    const updateTime = () => {
+      setCurrentTime(calculateCurrentTime(timerState));
+    };
+
+    updateTime();
+
+    if (timerState.state === "running") {
+      const interval = setInterval(updateTime, 100);
+      return () => clearInterval(interval);
+    }
+  }, [timerState]);
 
   const handleLogout = async () => {
     const result = await signOut();
@@ -94,7 +135,6 @@ function DashboardContent() {
     setActivatingId(questionId);
 
     try {
-      // Se estiver ativando, desativar todas as outras primeiro
       if (!currentIsShow) {
         await deactivateAllQuestions();
       }
@@ -105,7 +145,6 @@ function DashboardContent() {
         toast.success(
           currentIsShow ? "Pergunta desativada!" : "Pergunta ativada!"
         );
-        // Recarregar perguntas
         loadQuestions(selectedEdition);
       } else {
         toast.error(`Erro: ${result.error}`);
@@ -118,8 +157,51 @@ function DashboardContent() {
     }
   };
 
+  // Funções do cronômetro
+  const handleStartTimer = async () => {
+    if (!user?.uid) return;
+    setTimerLoading(true);
+    try {
+      await startTimer(user.uid);
+      toast.success("Cronômetro iniciado!");
+    } catch (error) {
+      console.error("Erro ao iniciar cronômetro:", error);
+      toast.error("Erro ao iniciar cronômetro.");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
 
-  
+  const handlePauseTimer = async () => {
+    if (!user?.uid) return;
+    setTimerLoading(true);
+    try {
+      await pauseTimer(user.uid);
+      toast.success("Cronômetro pausado!");
+    } catch (error) {
+      console.error("Erro ao pausar cronômetro:", error);
+      toast.error("Erro ao pausar cronômetro.");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  const handleResetTimer = async () => {
+    if (!user?.uid) return;
+    if (!confirm("Tem certeza que deseja zerar o cronômetro?")) return;
+    
+    setTimerLoading(true);
+    try {
+      await resetTimer(user.uid);
+      toast.success("Cronômetro zerado!");
+    } catch (error) {
+      console.error("Erro ao zerar cronômetro:", error);
+      toast.error("Erro ao zerar cronômetro.");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
   const formatDate = (timestamp: any) => {
     try {
       const date = timestamp.toDate();
@@ -138,10 +220,10 @@ function DashboardContent() {
           </h1>
           <div className="flex gap-4">
             <button
-              onClick={() => router.push('/admin/cronometro')}
+              onClick={() => router.push('/admin/dashboard')}
               className="sketchy-border bg-white hover:bg-[rgb(230_230_230)] px-6 py-2 font-bold transition-colors"
             >
-              Cronômetro-Admin
+              Dashboard-Admin
             </button>
             <button
               onClick={handleLogout}
@@ -154,96 +236,61 @@ function DashboardContent() {
 
         <hr className="sketchy-divider" />
 
-        <div className="mb-8">
-          <label className="block text-xl font-bold mb-4 uppercase">
-            Filtrar por edição:
-          </label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {editions.map((edition) => (
-              <button
-                  key={edition.name} // Chave agora é o nome
-                  type="button"
-                  onClick={() => setSelectedEdition(edition.name)} // Define o estado com o nome (string)
-                  disabled={loading}
-                  className={`
-                    text-center
-                    transition-all duration-200 disabled:opacity-50
-                    ${
-                      selectedEdition === edition.name
-                        ? "bg-white text-black shadow-[6px_6px_0px_rgb(0_0_0)]" // <-- MUDANÇA AQUI
-                        : "bg-white text-black"
-                    }
-                  `}
-                  // Adicionado aria-label para acessibilidade, já que o botão não tem texto
-                  aria-label={edition.name}
-                >
-                  {/* Renderiza o componente do logo */}
-                 <img
-                    src={edition.logoPath} // Use o caminho do logo aqui
-                    alt={edition.name} // Importante para acessibilidade
-                    className="w-full h-48 md:h-44 object-contain"
-                  />
-                </button>
-            ))}
+        {/* Seção do Cronômetro */}
+        <div className="mb-8 sketchy-box bg-[rgb(250_250_250)]">
+          <h2 className="text-2xl font-bold mb-4 uppercase">Cronômetro Remoto</h2>
+          
+          {/* Display do Tempo */}
+          <div className="text-center mb-6">
+            <div className="text-6xl md:text-8xl font-display mb-2">
+              {formatTime(currentTime)}
+            </div>
+            <div className="text-sm text-[rgb(102_102_102)]">
+              Estado: <span className="font-bold uppercase">{timerState?.state || "carregando..."}</span>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <h2 className="text-2xl font-bold mb-4 uppercase">
-            Perguntas recebidas ({totalCount}):
-          </h2>
+          {/* Controles */}
+          <div className="flex flex-wrap justify-center gap-4">
+            <button
+              onClick={handleStartTimer}
+              disabled={timerLoading || timerState?.state === "running"}
+              className="sketchy-border bg-green-400 hover:bg-green-500 px-8 py-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {timerState?.state === "running" ? "Em Execução" : "Iniciar"}
+            </button>
+            
+            <button
+              onClick={handlePauseTimer}
+              disabled={timerLoading || timerState?.state !== "running"}
+              className="sketchy-border bg-yellow-400 hover:bg-yellow-500 px-8 py-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Pausar
+            </button>
+            
+            <button
+              onClick={handleResetTimer}
+              disabled={timerLoading}
+              className="sketchy-border bg-red-400 hover:bg-red-500 px-8 py-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Zerar
+            </button>
+          </div>
 
-          {loading ? (
-            <div className="sketchy-box text-center py-12">
-              <LoadingSpinner size="lg" />
-              <p className="mt-4 text-lg">Carregando perguntas...</p>
-            </div>
-          ) : questions.length === 0 ? (
-            <div className="sketchy-box text-center">
-              <p className="text-lg text-[rgb(102_102_102)]">
-                Nenhuma pergunta recebida ainda para esta edição.
-              </p>
-            </div>
-          ) : (
-            <div className="max-h-[600px] overflow-y-auto space-y-4">
-              {questions.map((question) => (
-                <div key={question.id} className="sketchy-box relative">
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="flex-1">
-                      <p className="text-base md:text-lg mb-2">{question.questionText}</p>
-                      <p className="text-sm text-[rgb(102_102_102)]">
-                        Enviada em: {formatDate(question.createdAt)}
-                      </p>
-                    </div>
-                     <button
-                        onClick={() =>
-                          handleToggleShow(question.id, question.isShow || false)
-                        }
-                        disabled={activatingId === question.id}
-                        className={`sketchy-border px-4 py-2 font-bold text-sm disabled:opacity-50 transition-colors ${
-                          question.isShow
-                            ? "bg-yellow-400 hover:bg-yellow-500"
-                            : "bg-green-400 hover:bg-green-500"
-                        }`}
-                      >
-                        {activatingId === question.id
-                          ? "..."
-                          : question.isShow
-                          ? "Desativar"
-                          : "Ativar"}
-                      </button>
-                    <button
-                      onClick={() => handleDelete(question.id)}
-                      disabled={deletingId === question.id}
-                      className="sketchy-border bg-white hover:bg-red-50 px-4 py-2 font-bold text-sm disabled:opacity-50 transition-colors"
-                    >
-                      {deletingId === question.id ? "..." : "Deletar"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Link para tela do cronômetro */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-[rgb(102_102_102)] mb-2">
+              Tela pública do cronômetro:
+            </p>
+            <a
+              href="/cronometro"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block sketchy-border bg-white hover:bg-[rgb(230_230_230)] px-4 py-2 font-bold text-sm transition-colors"
+            >
+              Abrir Cronômetro →
+            </a>
+          </div>
         </div>
 
         <hr className="sketchy-divider" />
@@ -274,3 +321,4 @@ export default function AdminDashboard() {
     </ProtectedRoute>
   );
 }
+
