@@ -2,47 +2,22 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
-import { getActiveQuestion, Question } from "@/lib/firestore";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useActiveQuestion } from "@/hooks/useActiveQuestion";
 
 export default function Visualizador() {
-  const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { question: activeQuestion, loading } = useActiveQuestion();
   const [showLogo, setShowLogo] = useState(true);
 
-  // Função para buscar pergunta ativa
-  const fetchActiveQuestion = async () => {
-    try {
-      const question = await getActiveQuestion();
-      
-      if (question) {
-        setActiveQuestion(question);
-        setShowLogo(false);
-      } else {
-        setActiveQuestion(null);
-        setShowLogo(true);
-      }
-      
-      setLoading(false);
-    } catch (error) {
-      console.error("Erro ao buscar pergunta ativa:", error);
-      setLoading(false);
-    }
-  };
-
-  // Polling a cada 1 segundo
+  // Atualizar estado do logo quando a pergunta mudar
   useEffect(() => {
-    // Buscar imediatamente
-    fetchActiveQuestion();
-
-    // Configurar polling
-    const interval = setInterval(() => {
-      fetchActiveQuestion();
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
+    if (activeQuestion) {
+      setShowLogo(false);
+    } else {
+      setShowLogo(true);
+    }
+  }, [activeQuestion]);
 
   const formatDate = (timestamp: any) => {
     try {

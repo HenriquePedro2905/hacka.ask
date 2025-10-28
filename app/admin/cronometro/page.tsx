@@ -23,9 +23,20 @@ import {
   resetTimer,
   subscribeToTimer,
   calculateCurrentTime,
-  formatTime,
+  formatTime as formatStopwatchTime, // Renomeado para evitar conflito
   TimerState,
 } from "@/lib/timer";
+import {
+  initializeCountdownTimer,
+  startCountdownTimer,
+  pauseCountdownTimer,
+  resetCountdownTimer,
+  subscribeToCountdownTimer,
+  calculateRemainingTime,
+  updateDeadline,
+  formatTime as formatCountdownTime, // Renomeado para evitar conflito
+  CountdownTimerState,
+} from "@/lib/countdownTimer";
 import { useAuth } from "@/contexts/AuthContext";
 
 function DashboardContent() {
@@ -38,10 +49,15 @@ function DashboardContent() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activatingId, setActivatingId] = useState<string | null>(null);
 
-  // Estados do cronômetro
+  // Estados do Cronômetro (Contagem Progressiva)
   const [timerState, setTimerState] = useState<TimerState | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [timerLoading, setTimerLoading] = useState(false);
+
+  // Estados do Timer de Contagem Regressiva
+  const [countdownState, setCountdownState] = useState<CountdownTimerState | null>(null);
+  const [countdownTime, setCountdownTime] = useState(0);
+  const [deadlineInput, setDeadlineInput] = useState<string>("");
 
   const editions = [
     { name: "Sextou com Jogos", logoPath: "/Sextou_Com_Jogos.svg" },
@@ -69,32 +85,52 @@ function DashboardContent() {
     loadQuestions(selectedEdition);
   }, [selectedEdition]);
 
-  // Inicializar e subscrever ao cronômetro
+  // Inicializar e subscrever ao cronômetro (Contagem Progressiva)
   useEffect(() => {
     initializeTimer();
-
     const unsubscribe = subscribeToTimer((state) => {
       setTimerState(state);
     });
-
     return () => unsubscribe();
   }, []);
 
-  // Atualizar tempo do cronômetro
+  // Inicializar e subscrever ao Timer de Contagem Regressiva
+  useEffect(() => {
+    initializeCountdownTimer();
+    const unsubscribe = subscribeToCountdownTimer((state) => {
+      setCountdownState(state);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Atualizar tempo do cronômetro (Contagem Progressiva)
   useEffect(() => {
     if (!timerState) return;
-
-    const updateTime = () => {
-      setCurrentTime(calculateCurrentTime(timerState));
-    };
-
-    updateTime();
-
+    const update = () => setCurrentTime(calculateCurrentTime(timerState));
+    update();
     if (timerState.state === "running") {
-      const interval = setInterval(updateTime, 100);
+      const interval = setInterval(update, 100);
       return () => clearInterval(interval);
     }
   }, [timerState]);
+
+  // Atualizar tempo do Timer de Contagem Regressiva
+  useEffect(() => {
+    if (!countdownState) return;
+    const update = () => setCountdownTime(calculateRemainingTime(countdownState));
+    update();
+
+    if (countdownState.deadlineAt && !deadlineInput) {
+      const date = countdownState.deadlineAt.toDate();
+      const formattedDate = format(date, "yyyy-MM-dd'T'HH:mm");
+      setDeadlineInput(formattedDate);
+    }
+
+    if (countdownState.state !== "stopped" && countdownState.state !== "finished") {
+      const interval = setInterval(update, 100);
+      return () => clearInterval(interval);
+    }
+  }, [countdownState]);
 
   const handleLogout = async () => {
     const result = await signOut();
@@ -107,15 +143,10 @@ function DashboardContent() {
   };
 
   const handleDelete = async (questionId: string) => {
-    if (!confirm("Tem certeza que deseja deletar esta pergunta?")) {
-      return;
-    }
-
+    if (!confirm("Tem certeza que deseja deletar esta pergunta?")) return;
     setDeletingId(questionId);
-
     try {
       const result = await deleteQuestion(questionId);
-
       if (result.success) {
         toast.success("Pergunta deletada com sucesso!");
         setQuestions((prev) => prev.filter((q) => q.id !== questionId));
@@ -133,18 +164,13 @@ function DashboardContent() {
 
   const handleToggleShow = async (questionId: string, currentIsShow: boolean) => {
     setActivatingId(questionId);
-
     try {
       if (!currentIsShow) {
         await deactivateAllQuestions();
       }
-
       const result = await updateQuestionIsShow(questionId, !currentIsShow);
-
       if (result.success) {
-        toast.success(
-          currentIsShow ? "Pergunta desativada!" : "Pergunta ativada!"
-        );
+        toast.success(currentIsShow ? "Pergunta desativada!" : "Pergunta ativada!");
         loadQuestions(selectedEdition);
       } else {
         toast.error(`Erro: ${result.error}`);
@@ -157,7 +183,7 @@ function DashboardContent() {
     }
   };
 
-  // Funções do cronômetro
+  // Funções do cronômetro (Contagem Progressiva)
   const handleStartTimer = async () => {
     if (!user?.uid) return;
     setTimerLoading(true);
@@ -189,7 +215,6 @@ function DashboardContent() {
   const handleResetTimer = async () => {
     if (!user?.uid) return;
     if (!confirm("Tem certeza que deseja zerar o cronômetro?")) return;
-    
     setTimerLoading(true);
     try {
       await resetTimer(user.uid);
@@ -197,6 +222,67 @@ function DashboardContent() {
     } catch (error) {
       console.error("Erro ao zerar cronômetro:", error);
       toast.error("Erro ao zerar cronômetro.");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  // Funções do Timer de Contagem Regressiva
+  const handleUpdateDeadline = async () => {
+    if (!user?.uid || !deadlineInput) return;
+    try {
+      const deadlineDate = new Date(deadlineInput);
+      if (isNaN(deadlineDate.getTime())) {
+        toast.error("Data/Hora inválida.");
+        return;
+      }
+      await updateDeadline(user.uid, deadlineDate);
+      toast.success("Prazo de entrega atualizado!");
+    } catch (error) {
+      console.error("Erro ao atualizar prazo:", error);
+      toast.error("Erro ao atualizar prazo.");
+    }
+  };
+
+  const handleStartCountdown = async () => {
+    if (!user?.uid) return;
+    setTimerLoading(true);
+    try {
+      await startCountdownTimer(user.uid);
+      toast.success("Contagem Regressiva iniciada!");
+    } catch (error) {
+      console.error("Erro ao iniciar timer:", error);
+      toast.error(error instanceof Error ? error.message : "Erro ao iniciar timer.");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  const handlePauseCountdown = async () => {
+    if (!user?.uid) return;
+    setTimerLoading(true);
+    try {
+      await pauseCountdownTimer(user.uid);
+      toast.success("Contagem Regressiva pausada!");
+    } catch (error) {
+      console.error("Erro ao pausar timer:", error);
+      toast.error("Erro ao pausar timer.");
+    } finally {
+      setTimerLoading(false);
+    }
+  };
+
+  const handleResetCountdown = async () => {
+    if (!user?.uid) return;
+    if (!confirm("Tem certeza que deseja zerar o timer e remover o prazo?")) return;
+    setTimerLoading(true);
+    try {
+      await resetCountdownTimer(user.uid);
+      setDeadlineInput("");
+      toast.success("Timer zerado e prazo removido!");
+    } catch (error) {
+      console.error("Erro ao zerar timer:", error);
+      toast.error("Erro ao zerar timer.");
     } finally {
       setTimerLoading(false);
     }
@@ -215,9 +301,7 @@ function DashboardContent() {
     <div className="min-h-screen p-4">
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-          <h1 className="text-3xl md:text-4xl font-display">
-            HACKA.ASK - Admin
-          </h1>
+          <h1 className="text-3xl md:text-4xl font-display">HACKA.ASK - Admin</h1>
           <div className="flex gap-4">
             <button
               onClick={() => router.push('/admin/dashboard')}
@@ -236,21 +320,17 @@ function DashboardContent() {
 
         <hr className="sketchy-divider" />
 
-        {/* Seção do Cronômetro */}
+        {/* Seção do Cronômetro (Contagem Progressiva) */}
         <div className="mb-8 sketchy-box bg-[rgb(250_250_250)]">
-          <h2 className="text-2xl font-bold mb-4 uppercase">Cronômetro Remoto</h2>
-          
-          {/* Display do Tempo */}
+          <h2 className="text-2xl font-bold mb-4 uppercase">Cronômetro Remoto (Contagem Progressiva)</h2>
           <div className="text-center mb-6">
             <div className="text-6xl md:text-8xl font-display mb-2">
-              {formatTime(currentTime)}
+              {formatStopwatchTime(currentTime)}
             </div>
             <div className="text-sm text-[rgb(102_102_102)]">
               Estado: <span className="font-bold uppercase">{timerState?.state || "carregando..."}</span>
             </div>
           </div>
-
-          {/* Controles */}
           <div className="flex flex-wrap justify-center gap-4">
             <button
               onClick={handleStartTimer}
@@ -259,7 +339,6 @@ function DashboardContent() {
             >
               {timerState?.state === "running" ? "Em Execução" : "Iniciar"}
             </button>
-            
             <button
               onClick={handlePauseTimer}
               disabled={timerLoading || timerState?.state !== "running"}
@@ -267,7 +346,6 @@ function DashboardContent() {
             >
               Pausar
             </button>
-            
             <button
               onClick={handleResetTimer}
               disabled={timerLoading}
@@ -276,12 +354,8 @@ function DashboardContent() {
               Zerar
             </button>
           </div>
-
-          {/* Link para tela do cronômetro */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-[rgb(102_102_102)] mb-2">
-              Tela pública do cronômetro:
-            </p>
+            <p className="text-sm text-[rgb(102_102_102)] mb-2">Tela pública do cronômetro (Contagem Progressiva):</p>
             <a
               href="/cronometro"
               target="_blank"
@@ -289,6 +363,67 @@ function DashboardContent() {
               className="inline-block sketchy-border bg-white hover:bg-[rgb(230_230_230)] px-4 py-2 font-bold text-sm transition-colors"
             >
               Abrir Cronômetro →
+            </a>
+          </div>
+        </div>
+
+        <hr className="sketchy-divider" />
+
+        {/* Seção do Timer (Contagem Regressiva) */}
+        <div className="mb-8 sketchy-box bg-[rgb(250_250_250)]">
+          <h2 className="text-2xl font-bold mb-4 uppercase">Timer de Contagem Regressiva</h2>
+          <div className="mb-4">
+            <label htmlFor="deadline" className="block text-sm font-medium text-[rgb(102_102_102)] mb-1">Data e Hora do Prazo Final</label>
+            <div className="flex gap-2">
+              <input
+                id="deadline"
+                type="datetime-local"
+                value={deadlineInput}
+                onChange={(e) => setDeadlineInput(e.target.value)}
+                className="sketchy-border p-2 w-full"
+              />
+              <button
+                onClick={handleUpdateDeadline}
+                className="sketchy-border bg-blue-400 hover:bg-blue-500 px-4 py-2 font-bold transition-colors"
+              >
+                Salvar Prazo
+              </button>
+            </div>
+          </div>
+          <div className="text-center mb-6">
+            <div className="text-sm text-[rgb(102_102_102)] mb-1">Prazo Final: {countdownState?.deadlineAt ? formatDate(countdownState.deadlineAt) : "Não definido"}</div>
+            <div className="text-6xl md:text-8xl font-display mb-2">
+              {formatCountdownTime(countdownTime)}
+            </div>
+            <div className="text-sm text-[rgb(102_102_102)]">
+              Estado: <span className="font-bold uppercase">{countdownState?.state || "carregando..."}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap justify-center gap-4">
+            <button
+              onClick={handleStartCountdown}
+              disabled={timerLoading || countdownState?.state === "running" || !countdownState?.deadlineAt}
+              className="sketchy-border bg-green-400 hover:bg-green-500 px-8 py-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {countdownState?.state === "running" ? "Em Execução" : "Iniciar Timer"}
+            </button>
+            <button
+              onClick={handleResetCountdown}
+              disabled={timerLoading}
+              className="sketchy-border bg-red-400 hover:bg-red-500 px-8 py-3 font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Zerar Timer
+            </button>
+          </div>
+          <div className="mt-6 text-center">
+            <p className="text-sm text-[rgb(102_102_102)] mb-2">Tela pública do Timer de Contagem Regressiva:</p>
+            <a
+              href="/timer"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block sketchy-border bg-white hover:bg-[rgb(230_230_230)] px-4 py-2 font-bold text-sm transition-colors"
+            >
+              Abrir Timer →
             </a>
           </div>
         </div>
@@ -321,4 +456,3 @@ export default function AdminDashboard() {
     </ProtectedRoute>
   );
 }
-
