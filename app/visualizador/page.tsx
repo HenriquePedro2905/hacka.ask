@@ -32,13 +32,17 @@ export default function Visualizador() {
   if (showLogo || !activeQuestion) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8 bg-white">
-        <div className="text-center">
-          <h1 className="text-6xl md:text-8xl font-display mb-4 animate-pulse">
-            HACKACAST
-          </h1>
-          <p className="text-xl md:text-2xl font-bold text-[rgb(102_102_102)]">
-            Aguardando pergunta...
-          </p>
+        <div className="text-center w-full flex justify-center">
+          <div className="w-full max-w-4xl">
+            <Image
+              src="/Hackacast.svg"
+              alt="Hackacast"
+              width={1200}
+              height={300}
+              className="w-full h-auto animate-pulse"
+              priority
+            />
+          </div>
         </div>
       </div>
     );
@@ -60,7 +64,7 @@ export default function Visualizador() {
       <div className="w-full p-8">
         <div className="text-center">
           <Image
-            src="/logo-2.svg"
+            src="/Hackacast.svg"
             alt="Logo"
             width={650}
             height={200}
