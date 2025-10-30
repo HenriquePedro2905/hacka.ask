@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { signOut } from "@/lib/auth";
+import { Timestamp } from "firebase/firestore";
 import {
   getQuestionsByEdition,
   deleteQuestion,
   countQuestionsByEdition,
   updateQuestionIsShow,
   deactivateAllQuestions,
+  getDisableTimestamp,
+  updateDisableTimestamp,
   Question,
 } from "@/lib/firestore";
 import { format } from "date-fns";
@@ -25,7 +28,49 @@ function DashboardContent() {
   const [totalCount, setTotalCount] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [isSendingDisabled, setIsSendingDisabled] = useState<boolean>(false);
+  const [updatingSendStatus, setUpdatingSendStatus] = useState<boolean>(false);
+  const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const [disableTimestamp, setDisableTimestamp] = useState<Timestamp | null>(null);
 
+  // Carregar status de envio quando a edição for alterada
+  useEffect(() => {
+    const loadSendStatus = async () => {
+      try {
+        const timestamp = await getDisableTimestamp(selectedEdition);
+        setDisableTimestamp(timestamp);
+        setIsSendingDisabled(!!timestamp);
+      } catch (error) {
+        console.error("Erro ao carregar status de envio:", error);
+        toast.error("Erro ao carregar status de envio.");
+      }
+    };
+    
+    loadSendStatus();
+  }, [selectedEdition]);
+
+  // Função para alternar o status de envio
+  const toggleSendingStatus = async () => {
+    try {
+      setUpdatingSendStatus(true);
+      const newStatus = !isSendingDisabled;
+      const { success, error } = await updateDisableTimestamp(selectedEdition, newStatus);
+      
+      if (success) {
+        setIsSendingDisabled(newStatus);
+        const timestamp = await getDisableTimestamp(selectedEdition);
+        setDisableTimestamp(timestamp);
+        toast.success(`Envio de perguntas ${newStatus ? 'desativado' : 'ativado'} com sucesso!`);
+      } else {
+        throw new Error(error || "Erro ao atualizar status de envio");
+      }
+    } catch (error) {
+      console.error("Erro ao atualizar status de envio:", error);
+      toast.error(`Erro ao ${isSendingDisabled ? 'ativar' : 'desativar'} envio de perguntas.`);
+    } finally {
+      setUpdatingSendStatus(false);
+    }
+  };
 
   // const editions = ["Sextou com Jogos", "De frente com Frank", "The night com Miola"];
 
@@ -35,12 +80,22 @@ function DashboardContent() {
     { name: "The night com Miola", logoPath: "/TheNightComMiola.svg" },
   ];
   
-  const loadQuestions = async (edition: string) => {
+  const loadQuestions = useCallback(async (edition: string) => {
     setLoading(true);
     try {
       const result = await getQuestionsByEdition(edition, 50);
-      setQuestions(result.questions);
       
+      // Se o envio estiver desativado, filtrar apenas perguntas anteriores ao timestamp
+      let filteredQuestions = result.questions;
+      if (disableTimestamp) {
+        filteredQuestions = result.questions.filter(question => 
+          question.createdAt.toMillis() < disableTimestamp.toMillis()
+        );
+      }
+      
+      setQuestions(filteredQuestions);
+      
+      // Atualizar contagem total (sem filtro para mostrar o total real)
       const count = await countQuestionsByEdition(edition);
       setTotalCount(count);
     } catch (error) {
@@ -49,11 +104,11 @@ function DashboardContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [disableTimestamp]);
 
   useEffect(() => {
     loadQuestions(selectedEdition);
-  }, [selectedEdition]);
+  }, [selectedEdition, loadQuestions]);
 
   const handleLogout = async () => {
     const result = await signOut();
@@ -115,6 +170,55 @@ function DashboardContent() {
       toast.error("Erro ao atualizar pergunta.");
     } finally {
       setActivatingId(null);
+    }
+  };
+
+  const handleDrawRandomQuestion = async () => {
+    if (isDrawing) return;
+    
+    setIsDrawing(true);
+    
+    try {
+      // Primeiro, carregar todas as perguntas elegíveis
+      const result = await getQuestionsByEdition(selectedEdition, 1000); // Número grande para pegar todas
+      
+      // Filtrar perguntas elegíveis (não mostradas e dentro do período de envio)
+      const eligibleQuestions = result.questions.filter(question => {
+        // Se o envio estiver desativado, verificar se a pergunta é anterior ao timestamp
+        if (disableTimestamp && question.createdAt.toMillis() >= disableTimestamp.toMillis()) {
+          return false;
+        }
+        // Apenas perguntas não mostradas anteriormente
+        return !question.isShow;
+      });
+      
+      if (eligibleQuestions.length === 0) {
+        toast.error("Não há perguntas disponíveis para sorteio.");
+        return;
+      }
+      
+      // Sortear uma pergunta aleatória
+      const randomIndex = Math.floor(Math.random() * eligibleQuestions.length);
+      const selectedQuestion = eligibleQuestions[randomIndex];
+      
+      // Desativar todas as perguntas ativas
+      await deactivateAllQuestions();
+      
+      // Ativar a pergunta sorteada
+      const updateResult = await updateQuestionIsShow(selectedQuestion.id, true);
+      
+      if (updateResult.success) {
+        toast.success("Pergunta sorteada e ativada com sucesso!");
+        // Recarregar perguntas para atualizar a lista
+        await loadQuestions(selectedEdition);
+      } else {
+        toast.error(updateResult.error || "Erro ao ativar pergunta sorteada.");
+      }
+    } catch (error) {
+      console.error("Erro ao sortear pergunta:", error);
+      toast.error("Erro inesperado ao sortear pergunta.");
+    } finally {
+      setIsDrawing(false);
     }
   };
 
@@ -189,20 +293,58 @@ function DashboardContent() {
         </div>
 
         <div>
-          <h2 className="text-2xl font-bold mb-4 uppercase">
-            Perguntas recebidas ({totalCount}):
-          </h2>
-
+          <div className="mb-6">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4 gap-4">
+              <h2 className="text-2xl font-bold">Perguntas Recebidas ({totalCount}):</h2>
+              
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  onClick={handleDrawRandomQuestion}
+                  disabled={isDrawing || loading}
+                  className="sketchy-border px-4 py-2 font-bold text-sm disabled:opacity-50 transition-colors bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  {isDrawing ? "Sorteando..." : "Sortear Pergunta"}
+                </button>
+                <button
+                  onClick={toggleSendingStatus}
+                  disabled={updatingSendStatus}
+                  className={`sketchy-border px-4 py-2 font-bold text-sm disabled:opacity-50 transition-colors ${
+                    isSendingDisabled 
+                      ? "bg-green-500 hover:bg-green-600 text-white" 
+                      : "bg-red-500 hover:bg-red-600 text-white"
+                  }`}
+                >
+                  {updatingSendStatus 
+                    ? "Atualizando..." 
+                    : isSendingDisabled 
+                      ? "Ativar Envio" 
+                      : "Desativar Envio"}
+                </button>
+              </div>
+            </div>
+            
+            {isSendingDisabled && disableTimestamp && (
+              <div className="sketchy-box bg-yellow-50 border-yellow-200 text-yellow-800 mb-6">
+                <div className="flex items-start">
+                  <span className="text-yellow-500 mr-2 mt-0.5">⚠️</span>
+                  <div>
+                    <p className="font-medium">Envio de perguntas desativado</p>
+                    <p className="text-sm">Desativado em: {format(disableTimestamp.toDate(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
+                    <p className="text-sm mt-1">Novas perguntas continuam sendo salvas, mas não são exibidas.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
           {loading ? (
             <div className="sketchy-box text-center py-12">
               <LoadingSpinner size="lg" />
               <p className="mt-4 text-lg">Carregando perguntas...</p>
             </div>
           ) : questions.length === 0 ? (
-            <div className="sketchy-box text-center">
-              <p className="text-lg text-[rgb(102_102_102)]">
-                Nenhuma pergunta recebida ainda para esta edição.
-              </p>
+            <div className="sketchy-box text-center py-12">
+              <p className="text-lg">Nenhuma pergunta encontrada para esta edição.</p>
             </div>
           ) : (
             <div className="max-h-[600px] overflow-y-auto space-y-4">

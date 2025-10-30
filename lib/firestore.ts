@@ -13,6 +13,9 @@ import {
   limit,
   startAfter,
   DocumentSnapshot,
+  updateDoc,
+  serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import CryptoJS from "crypto-js";
@@ -184,8 +187,6 @@ export const countQuestionsByEdition = async (edition: string): Promise<number> 
   }
 };
 
-
-
 // Buscar pergunta ativa (isShow: true)
 export const getActiveQuestion = async (): Promise<Question | null> => {
   try {
@@ -233,20 +234,63 @@ export const deactivateAllQuestions = async (): Promise<{
   error?: string;
 }> => {
   try {
-    const q = query(collection(db, "questions"), where("isShow", "==", true));
+    const questionsRef = collection(db, "questions");
+    const q = query(questionsRef, where("isShow", "==", true));
     const querySnapshot = await getDocs(q);
-
-    const batch: Promise<void>[] = [];
-    querySnapshot.forEach((docSnapshot) => {
-      const questionRef = doc(db, "questions", docSnapshot.id);
-      batch.push(setDoc(questionRef, { isShow: false }, { merge: true }));
+    
+    const batch = writeBatch(db);
+    querySnapshot.forEach((doc) => {
+      const docRef = doc.ref;
+      batch.update(docRef, { isShow: false });
     });
-
-    await Promise.all(batch);
+    
+    await batch.commit();
     return { success: true };
-  } catch (error: any) {
-    console.error("Erro ao desativar todas as perguntas:", error);
-    return { success: false, error: error.message };
+  } catch (error) {
+    console.error("Erro ao desativar perguntas:", error);
+    return { success: false, error: "Erro ao desativar perguntas" };
   }
 };
 
+// Atualizar o timestamp de desativação de uma edição
+export const updateDisableTimestamp = async (
+  edition: string,
+  isDisabled: boolean
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const docRef = doc(db, "edition_settings", edition);
+
+    if (isDisabled) {
+      await setDoc(docRef, {
+        disabledAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } else {
+      await setDoc(docRef, {
+        disabledAt: null,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("Erro ao atualizar timestamp de desativação:", error);
+    return { success: false, error: "Erro ao atualizar status de envio" };
+  }
+};
+
+// Obter o timestamp de desativação de uma edição
+export const getDisableTimestamp = async (edition: string): Promise<Timestamp | null> => {
+  try {
+    const docRef = doc(db, "edition_settings", edition);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists() && docSnap.data().disabledAt) {
+      return docSnap.data().disabledAt;
+    }
+    return null;
+  } catch (error) {
+    console.error("Erro ao obter timestamp de desativação:", error);
+    return null;
+  }
+};
