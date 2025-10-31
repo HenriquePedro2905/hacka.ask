@@ -74,9 +74,16 @@ export default function Visualizador() {
       </div>
 
       {/* Card centralizado na tela */}
-      <div className="flex items-start justify-center min-h-[calc(100vh-300px)] pt-16">
-        <div className="border border-gray-400 rounded-2xl p-8 m-4 bg-white/25 backdrop-blur-sm shadow-lg w-[800px] mx-6">
-          <p className="text-2xl md:text-4xl font-bold leading-relaxed text-center" style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}>
+      <div className="flex items-start justify-center min-h-[calc(100vh-300px)] pt-20">
+        <div className="border border-gray-400 rounded-2xl p-24 m-12 bg-white/25 backdrop-blur-sm shadow-lg w-[1200px] mx-10">
+          <p 
+            className={`font-bold leading-relaxed text-center ${
+              activeQuestion.questionText.length > 100 ? 'text-3xl md:text-5xl' : 
+              activeQuestion.questionText.length > 50 ? 'text-4xl md:text-6xl' : 
+              'text-5xl md:text-7xl'
+            }`} 
+            style={{ fontFamily: 'Helvetica, Arial, sans-serif' }}
+          >
             {activeQuestion.questionText}
           </p>
         </div>
