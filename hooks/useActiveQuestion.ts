@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getActiveQuestion, Question } from '@/lib/firestore';
 
-// Tempo em milissegundos entre as atualizações (30 segundos)
-const POLLING_INTERVAL = 30 * 1000;
+// Tempo em milissegundos entre as atualizações (10 segundos)
+const POLLING_INTERVAL = 10 * 1000;
 // Tempo de cache em milissegundos (10 segundos)
 const CACHE_DURATION = 10 * 1000;
 
